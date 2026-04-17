@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>NexChat</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet"/>
+  <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet"/>
+  <link href="{{ url_for('static', filename='css/call.css') }}" rel="stylesheet"/>
+</head>
+<body class="app-body">
+
+<!-- ═══ NAVBAR ═══════════════════════════════════════════════════════════════ -->
+<nav class="topbar">
+  <div class="topbar-brand">
+    <div class="brand-icon sm"><i class="fa-solid fa-comments"></i></div>
+    <span class="brand-name">NexChat</span>
+  </div>
+  <div class="topbar-nav">
+    <a href="/index"   class="tnav active"><i class="fa-solid fa-message"></i><span>Chats</span></a>
+    <a href="/profile" class="tnav"><i class="fa-solid fa-user"></i><span>Profile</span></a>
+    <button class="tnav" id="notifNavBtn">
+      <i class="fa-solid fa-bell"></i><span>Alerts</span>
+      <span class="nb-dot {% if unread_notifs == 0 %}d-none{% endif %}" id="navNotifDot">{{ unread_notifs }}</span>
+    </button>
+    <a href="/logout" class="tnav logout"><i class="fa-solid fa-right-from-bracket"></i><span>Logout</span></a>
+  </div>
+  <div class="topbar-user">
+    <div class="uav" title="{{ username }}">
+      {% if user.avatar %}<img src="/static/uploads/{{ user.avatar }}" onerror="this.style.display='none'"/>{% endif %}
+      {{ username[0].upper() }}
+    </div>
+    <span>{{ username }}</span>
+  </div>
+</nav>
+
+<!-- ═══ LAYOUT ════════════════════════════════════════════════════════════════ -->
+<div class="app-layout">
+
+  <!-- Icon Sidebar -->
+  <aside class="icon-bar">
+    <div class="ib-top">
+      <button class="ib-btn active" title="Chats" onclick="setPanel('chats',this)"><i class="fa-solid fa-message"></i></button>
+      <button class="ib-btn" title="Groups" onclick="setPanel('groups',this)"><i class="fa-solid fa-users"></i></button>
+      <button class="ib-btn" title="Notifications" id="notifIbBtn" onclick="setPanel('notifications',this)">
+        <i class="fa-solid fa-bell"></i>
+        <span class="ib-badge {% if unread_notifs == 0 %}d-none{% endif %}" id="ibNotifBadge">{{ unread_notifs if unread_notifs > 0 else '' }}</span>
+      </button>
+      <button class="ib-btn" title="Search" onclick="focusSearch()"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <button class="ib-btn" title="Settings" onclick="location='/profile'"><i class="fa-solid fa-gear"></i></button>
+    </div>
+    <a href="/logout" class="ib-btn ib-logout" title="Logout"><i class="fa-solid fa-power-off"></i></a>
+  </aside>
+
+  <!-- Left Panel -->
+  <div class="left-panel">
+
+    <!-- Search -->
+    <div class="search-area">
+      <div class="sbox">
+        <i class="fa-solid fa-magnifying-glass si"></i>
+        <input id="searchInput" type="text" class="sinput" placeholder="Search users…" autocomplete="off"/>
+        <button id="sClear" class="sclear d-none" onclick="clearSearch()"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <ul id="searchDropdown" class="sdrop d-none"></ul>
+    </div>
+
+    <!-- ── CHATS PANEL ─────────────────────────────────────────────────── -->
+    <div class="sub-panel" id="panelChats">
+      <div class="sp-header">
+        <span class="sp-title">Messages</span>
+        <button class="hbtn" onclick="focusSearch()" title="New chat"><i class="fa-solid fa-pen-to-square"></i></button>
+      </div>
+      <div class="list-wrap">
+        {% if conversations %}
+        <ul class="conv-list" id="dmList">
+          {% for c in conversations %}
+          <li class="citem" data-id="{{ c.id }}" data-type="dm" data-username="{{ c.username }}" onclick="openChat('{{ c.username }}','dm','{{ c.id }}')">
+            <div class="ci-av">
+              {% if c.avatar %}<img src="/static/uploads/{{ c.avatar }}" onerror="this.style.display='none'"/>{% endif %}
+              <span class="av-init">{{ c.username[0].upper() }}</span>
+              <span class="sdot {% if c.online %}on{% else %}off{% endif %}"></span>
+            </div>
+            <div class="ci-body">
+              <div class="ci-top"><span class="ci-name">{{ c.username }}</span><span class="ci-time">{{ c.time }}</span></div>
+              <div class="ci-bot"><span class="ci-prev">{{ c.last_message }}</span>
+                {% if c.unread > 0 %}<span class="ubadge">{{ c.unread }}</span>{% endif %}
+              </div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="empty-state"><i class="fa-solid fa-comments"></i><p>No conversations yet</p><small>Search for someone to chat with</small></div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ── GROUPS PANEL ────────────────────────────────────────────────── -->
+    <div class="sub-panel d-none" id="panelGroups">
+      <div class="sp-header">
+        <span class="sp-title">Groups</span>
+        <button class="hbtn" onclick="openCreateGroup()" title="Create group"><i class="fa-solid fa-plus"></i></button>
+      </div>
+      <div class="list-wrap">
+        {% if groups %}
+        <ul class="conv-list" id="groupList">
+          {% for g in groups %}
+          <li class="citem" data-id="{{ g.id }}" data-type="group" onclick="openChat('{{ g.name }}','group','{{ g.id }}')">
+            <div class="ci-av group-av">
+              {% if g.avatar %}<img src="/static/uploads/{{ g.avatar }}" onerror="this.style.display='none'"/>{% endif %}
+              <span class="av-init">{{ g.name[0].upper() }}</span>
+            </div>
+            <div class="ci-body">
+              <div class="ci-top"><span class="ci-name">{{ g.name }}</span><span class="ci-time">{{ g.time }}</span></div>
+              <div class="ci-bot">
+                <span class="ci-prev">{{ g.last_message or (g.member_count|string + ' members') }}</span>
+                {% if g.unread > 0 %}<span class="ubadge">{{ g.unread }}</span>{% endif %}
+              </div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="empty-state"><i class="fa-solid fa-users"></i><p>No groups yet</p><small><button class="link-btn" onclick="openCreateGroup()">Create your first group</button></small></div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ── NOTIFICATIONS PANEL ─────────────────────────────────────────── -->
+    <div class="sub-panel d-none" id="panelNotifications">
+      <div class="sp-header">
+        <span class="sp-title">Notifications</span>
+        <button class="hbtn" onclick="markAllRead()" title="Mark all read"><i class="fa-solid fa-check-double"></i></button>
+      </div>
+      <div class="list-wrap" id="notifList">
+        <div class="notif-loading"><div class="spinner-border spinner-border-sm text-primary"></div></div>
+      </div>
+    </div>
+
+  </div><!-- /left-panel -->
+
+  <!-- ═══ CHAT WINDOW ═══════════════════════════════════════════════════════ -->
+  <div class="chat-win" id="chatWin">
+
+    <!-- Welcome -->
+    <div class="welcome" id="welcomeScreen">
+      <div class="wc">
+        <div class="wc-icon"><i class="fa-solid fa-comments"></i></div>
+        <h2>Welcome to NexChat</h2>
+        <p>Pick a conversation or start a new one</p>
+        <div class="wc-feats">
+          <div class="wf"><i class="fa-solid fa-bolt"></i><span>Real-time</span></div>
+          <div class="wf"><i class="fa-solid fa-users"></i><span>Groups</span></div>
+          <div class="wf"><i class="fa-solid fa-bell"></i><span>Notifications</span></div>
+          <div class="wf"><i class="fa-solid fa-image"></i><span>Images</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Chat -->
+    <div class="chat-active d-none" id="chatActive">
+
+      <div class="chat-hdr" id="chatHdr">
+        <button class="back-btn d-none" id="backBtn" onclick="mobileBack()"><i class="fa-solid fa-arrow-left"></i></button>
+        <div class="hdr-av" id="hdrAv"></div>
+        <div class="hdr-info">
+          <span class="hdr-name" id="hdrName"></span>
+          <span class="hdr-status" id="hdrStatus"></span>
+        </div>
+        <div class="hdr-actions">
+          <!-- Group info button (shown only for groups) -->
+          <button class="hbtn d-none" id="groupInfoBtn" onclick="toggleGroupInfo()" title="Group info"><i class="fa-solid fa-circle-info"></i></button>
+          <button class="hbtn" title="Voice call" onclick="startCall('voice')"><i class="fa-solid fa-phone"></i></button>
+          <button class="hbtn" title="Video call" onclick="startCall('video')"><i class="fa-solid fa-video"></i></button>
+        </div>
+      </div>
+
+      <!-- Group Info Drawer -->
+      <div class="group-drawer d-none" id="groupDrawer">
+        <div class="gd-header"><span>Group Members</span><button class="hbtn" onclick="toggleGroupInfo()"><i class="fa-solid fa-xmark"></i></button></div>
+        <div id="gd-members" class="gd-members"></div>
+        <div class="gd-actions">
+          <button class="gd-btn-add" id="gdAddBtn"><i class="fa-solid fa-user-plus me-1"></i>Add Member</button>
+          <button class="gd-btn-leave" onclick="leaveGroup()"><i class="fa-solid fa-right-from-bracket me-1"></i>Leave Group</button>
+        </div>
+        <div class="gd-add-row d-none" id="gdAddRow">
+          <input type="text" id="gdAddInput" placeholder="Username to add…"/>
+          <button onclick="addGroupMember()"><i class="fa-solid fa-check"></i></button>
+        </div>
+      </div>
+
+      <!-- Typing -->
+      <div class="typing-bar d-none" id="typingBar"><span id="typingName"></span> is typing<span class="dots"><span></span><span></span><span></span></span></div>
+
+      <!-- Messages -->
+      <div class="msgs-area" id="msgsArea"></div>
+
+      <!-- Input -->
+      <div class="input-panel">
+        <div class="img-strip d-none" id="imgStrip">
+          <img id="imgThumb" src=""/><button onclick="removeImg()"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="emoji-picker d-none" id="emojiPicker"></div>
+        <div class="input-row">
+          <button class="iab" id="emojiToggle" title="Emoji"><i class="fa-regular fa-face-smile"></i></button>
+          <button class="iab" id="imgBtn" title="Image"><i class="fa-solid fa-image"></i></button>
+          <input type="file" id="imgInput" accept="image/*" class="d-none"/>
+          <input type="text" id="msgInput" class="msg-inp" placeholder="Type a message…" autocomplete="off"/>
+          <button class="send-btn" id="sendBtn"><i class="fa-solid fa-paper-plane"></i></button>
+        </div>
+      </div>
+    </div>
+  </div><!-- /chat-win -->
+</div><!-- /app-layout -->
+<!-- ═══ CALL MODAL ══════════════════════════════════════════════════ -->
+<div class="call-overlay d-none" id="callOverlay">
+  <div class="call-modal">
+
+    <!-- Video area (shown for video calls) -->
+    <div class="call-video-wrap" id="callVideoWrap" style="display:none">
+      <video id="remoteVideo" autoplay playsinline></video>
+      <video id="localVideo"  autoplay playsinline muted></video>
+    </div>
+
+    <!-- Avatar (shown for voice calls / while connecting) -->
+    <div class="call-avatar-placeholder" id="callAvatarWrap">
+      <div class="call-avatar-circle" id="callAvatar">A</div>
+    </div>
+
+    <!-- Info -->
+    <div class="call-info">
+      <div class="call-username" id="callUsername">Username</div>
+      <div class="call-status calling" id="callStatus">Calling...</div>
+      <div class="call-timer" id="callTimer"></div>
+    </div>
+
+    <!-- Controls -->
+    <div class="call-controls">
+      <!-- Mute mic -->
+      <button class="call-btn mute" id="btnMute" title="Mute">
+        <i class="fa-solid fa-microphone"></i>
+      </button>
+      <!-- Toggle camera (video calls only) -->
+      <button class="call-btn video-tog d-none" id="btnCamera" title="Camera">
+        <i class="fa-solid fa-video"></i>
+      </button>
+      <!-- End call -->
+      <button class="call-btn end" id="btnEndCall" title="End Call">
+        <i class="fa-solid fa-phone-slash"></i>
+      </button>
+      <!-- Speaker -->
+      <button class="call-btn speaker" id="btnSpeaker" title="Speaker">
+        <i class="fa-solid fa-volume-high"></i>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ INCOMING CALL TOAST ══════════════════════════════════════════ -->
+<div class="incoming-call-toast d-none" id="incomingCallToast">
+  <div class="inc-av" id="incAvatar">?</div>
+  <div class="inc-body">
+    <div class="inc-name" id="incName">Caller</div>
+    <div class="inc-type" id="incType">
+      <i class="fa-solid fa-phone"></i> Incoming call...
+    </div>
+  </div>
+  <div class="inc-actions">
+    <button class="inc-btn accept" id="btnAcceptCall" title="Accept">
+      <i class="fa-solid fa-phone"></i>
+    </button>
+    <button class="inc-btn reject" id="btnRejectCall" title="Reject">
+      <i class="fa-solid fa-phone-slash"></i>
+    </button>
+  </div>
+</div>
+
+<!-- ═══ Create Group Modal ═══════════════════════════════════════════════════ -->
+<div class="modal-overlay d-none" id="createGroupModal">
+  <div class="modal-card">
+    <div class="modal-hdr">
+      <span><i class="fa-solid fa-users me-2"></i>Create Group</span>
+      <button onclick="closeCreateGroup()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form id="createGroupForm" enctype="multipart/form-data">
+      <div class="modal-body">
+        <div class="gm-av-wrap">
+          <div class="gm-av-prev" id="gmAvPrev"><i class="fa-solid fa-users"></i></div>
+          <label class="av-label" for="gmAvFile"><i class="fa-solid fa-camera"></i> Group Photo</label>
+          <input type="file" id="gmAvFile" name="avatar" accept="image/*" class="d-none" onchange="prevGmAv(event)"/>
+        </div>
+        <div class="fg mt-3"><label>Group Name *</label>
+          <div class="ii"><i class="fa-solid fa-users"></i><input type="text" id="gmName" name="name" placeholder="Enter group name" required maxlength="50"/></div>
+        </div>
+        <div class="fg mt-3">
+          <label>Add Members</label>
+          <div class="sbox mb-2">
+            <i class="fa-solid fa-magnifying-glass si"></i>
+            <input type="text" id="gmSearch" class="sinput" placeholder="Search users to add…" autocomplete="off"/>
+          </div>
+          <ul id="gmSearchResults" class="sdrop d-none" style="position:relative;top:0;left:0;right:0;width:100%"></ul>
+          <div id="gmSelectedWrap" class="gm-selected"></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn-cancel" onclick="closeCreateGroup()">Cancel</button>
+        <button type="submit" class="btn-glow">Create Group</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ═══ Context Menu ══════════════════════════════════════════════════════════ -->
+<div class="ctx-menu d-none" id="ctxMenu">
+  <button class="ctx-item" id="ctxMe"><i class="fa-solid fa-trash-can me-2"></i>Delete for me</button>
+  <button class="ctx-item ctx-red d-none" id="ctxAll"><i class="fa-solid fa-bomb me-2"></i>Delete for everyone</button>
+</div>
+
+<!-- ═══ Image Modal ════════════════════════════════════════════════════════════ -->
+<div class="img-modal d-none" id="imgModal" onclick="this.classList.add('d-none')">
+  <img id="imgModalImg" src=""/>
+</div>
+
+<!-- ═══ Toast ═════════════════════════════════════════════════════════════════ -->
+<div class="toast-notif d-none" id="toast">
+  <div class="toast-av" id="toastAv"></div>
+  <div class="toast-body">
+    <div class="toast-name" id="toastName"></div>
+    <div class="toast-msg"  id="toastMsg"></div>
+  </div>
+  <button class="toast-close" onclick="this.closest('.toast-notif').classList.add('d-none')">×</button>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+  const CURRENT_USER = "{{ username }}";
+  const USER_AVATAR  = "{{ user.avatar or '' }}";
+  let INIT_UNREAD    = {{ unread_notifs }};
+</script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
+<script>
+  // Navbar notification button → opens notification panel
+  document.getElementById("notifNavBtn")?.addEventListener("click", () => {
+    setPanel("notifications", document.querySelector('.ib-btn[title="Notifications"]'));
+  });
+
+  // Navbar notification button active state sync
+  document.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll(".tnav").forEach(link => {
+      link.addEventListener("click", function () {
+        document.querySelectorAll(".tnav").forEach(l => l.classList.remove("active"));
+        this.classList.add("active");
+      });
+    });
+  });
+</script>
+</body>
+</html>
